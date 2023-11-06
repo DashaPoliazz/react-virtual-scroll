@@ -1,5 +1,5 @@
 import { useState, useLayoutEffect, useRef, useMemo, useCallback } from "react";
-import "./style.css";
+import "../../styles.css";
 
 const items: IItem[] = new Array(10_000).fill(0).map((_, idx) => ({
   id: idx,
@@ -124,8 +124,6 @@ export const Simple = () => {
     overscan: OVERSCAN,
     scrollingDelay: SCROLLING_DELAY,
   });
-
-  console.log(virtualItems);
 
   const handleClick = () => {
     setList([...list].reverse());

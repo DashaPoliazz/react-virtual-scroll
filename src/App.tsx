@@ -1,9 +1,10 @@
-import { Simple } from "./examples/Simple/Simple";
+import { DynamicHeight } from "./examples/DynamicHeight/DynamicHeight";
 
 function App() {
   return (
     <div>
-      <Simple />
+      {/* <Simple /> */}
+      <DynamicHeight />
     </div>
   );
 }
