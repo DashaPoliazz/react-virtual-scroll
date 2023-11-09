@@ -8,14 +8,15 @@ import {
 } from "react";
 import { createItems } from "./helpers/createItems";
 
-const ITEM_HEIGHT = 40;
 const ELEMENTS_QUANTITY = 1000;
 const DEFAULT_OVERSCAN = 3;
 const SCROLLING_DELAY = 150;
 
 type UseFixedSizeListProps = {
-  itemHeight: () => number;
+  itemHeight?: (index: number) => number;
   elementsQuantity: number;
+  getItemKey: (index: number) => number;
+  estimateItemHeight?: () => number;
   getScrollElement: () => HTMLDivElement | null;
   scrollingDelay?: number;
   overscan?: number;
@@ -27,17 +28,36 @@ type UseFixedSizeListProps = {
 // Observe of the elements with window.resizeObserver
 // Scroll correction
 
-const useFixedSizeList = ({
-  itemHeight,
-  elementsQuantity,
-  getScrollElement,
-  scrollingDelay = SCROLLING_DELAY,
-  overscan = DEFAULT_OVERSCAN,
-}: UseFixedSizeListProps) => {
+const validateProps = (props: UseFixedSizeListProps) => {
+  const { itemHeight, estimateItemHeight } = props;
+
+  if (!itemHeight && !estimateItemHeight) {
+    throw new Error(
+      "Please, provide either 'itemHeight' or 'estimateItemHeight' prop"
+    );
+  }
+};
+
+const useFixedSizeList = (props: UseFixedSizeListProps) => {
+  validateProps(props);
+
+  const {
+    itemHeight,
+    elementsQuantity,
+    getScrollElement,
+    getItemKey,
+    estimateItemHeight,
+    scrollingDelay = SCROLLING_DELAY,
+    overscan = DEFAULT_OVERSCAN,
+  } = props;
+
   // States
   const [listHeight, setListHeight] = useState(0);
   const [scrollTop, setScrollTop] = useState(0);
   const [isScrolling, setIsScrolling] = useState(false);
+  const [measurementCache, setMeasurementCache] = useState<
+    Record<string, number>
+  >({});
 
   // Measure the container height
   useLayoutEffect(() => {
@@ -101,6 +121,19 @@ const useFixedSizeList = ({
   }, [scrollingDelay, getScrollElement]);
 
   const { virtualItems, startIndex, endIndex, totalHeight } = useMemo(() => {
+    const getItemHeight = (index: number) => {
+      if (itemHeight) {
+        return itemHeight(index);
+      }
+
+      const key = getItemKey(index);
+      if (typeof measurementCache[key] === "number") {
+        return measurementCache[key];
+      }
+
+      return estimateItemHeight!();
+    };
+
     let scrolledTopArea = scrollTop;
     let scrolledBottomArea = scrolledTopArea + listHeight;
 
@@ -110,8 +143,11 @@ const useFixedSizeList = ({
     const allRows = new Array(elementsQuantity).fill(0);
 
     for (let index = 0; index < elementsQuantity; index++) {
+      const key = getItemKey(index);
+
       const row = {
-        height: itemHeight(),
+        key,
+        height: getItemHeight(index),
         offsetTop: totalHeight,
         index: index,
       };
@@ -136,9 +172,49 @@ const useFixedSizeList = ({
       endIndex,
       totalHeight,
     };
-  }, [scrollTop, elementsQuantity, itemHeight, listHeight, overscan]);
+  }, [
+    scrollTop,
+    elementsQuantity,
+    itemHeight,
+    listHeight,
+    overscan,
+    estimateItemHeight,
+    measurementCache,
+    getItemKey,
+  ]);
 
-  return { virtualItems, startIndex, endIndex, isScrolling, totalHeight };
+  const measureElement = useCallback(
+    (element: Element | null) => {
+      if (!element) {
+        return;
+      }
+
+      const indexAttribute = element.getAttribute("data-index") || "";
+      const index = parseInt(indexAttribute, 10);
+
+      if (Number.isNaN(index)) {
+        console.error(
+          "dynamic elements must have a valid `data-index` attribute"
+        );
+        return;
+      }
+
+      const size = element.getBoundingClientRect();
+      const key = getItemKey(index);
+
+      setMeasurementCache((cache) => ({ ...cache, [key]: size.height }));
+    },
+    [getItemKey]
+  );
+
+  return {
+    virtualItems,
+    startIndex,
+    endIndex,
+    isScrolling,
+    totalHeight,
+    measureElement,
+  };
 };
 
 export const DynamicHeight = () => {
@@ -149,11 +225,13 @@ export const DynamicHeight = () => {
   const scrollingElementRef = useRef(null);
 
   // hooks
-  const { virtualItems, startIndex, endIndex, isScrolling, totalHeight } =
+  const { virtualItems, isScrolling, totalHeight, measureElement } =
     useFixedSizeList({
-      itemHeight: () => Math.round(ITEM_HEIGHT + Math.random() * 10),
+      // itemHeight: () => Math.round(ITEM_HEIGHT + Math.random() * 10),
+      estimateItemHeight: useCallback(() => 16, []),
       elementsQuantity: ELEMENTS_QUANTITY,
       getScrollElement: useCallback(() => scrollingElementRef.current, []),
+      getItemKey: useCallback((index) => items[index].id, [items]),
     });
 
   // handlers
@@ -183,14 +261,18 @@ export const DynamicHeight = () => {
 
             return (
               <div
-                key={item?.id}
+                key={item.id}
+                data-index={virtualItem.index}
+                ref={measureElement}
                 style={{
-                  height: virtualItem.height,
+                  // height: virtualItem.height,
                   position: "absolute",
+                  top: 0,
                   transform: `translateY(${virtualItem.offsetTop}px)`,
+                  padding: "6px 12px",
                 }}
               >
-                {isScrolling ? "Scrolling..." : item?.content}
+                {`${virtualItem.index} ${item.content} `}
               </div>
             );
           })}
